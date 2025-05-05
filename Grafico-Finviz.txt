@@ -1,0 +1,124 @@
+# =============================================================================
+# Gráfico Treemap estilo Finviz con personalización para Power BI (VS Code)
+# =============================================================================
+
+import pandas as pd
+import matplotlib.pyplot as plt
+import squarify
+import numpy as np
+from matplotlib.colors import TwoSlopeNorm
+
+# =============================================================================
+# Parámetros ajustables
+# =============================================================================
+transparencia_base = 0.85
+fontsize_operador = 13
+fontsize_porcentaje = 15
+separacion = 1  # Espacio entre recuadros
+
+# =============================================================================
+# Cargar el dataset desde Power BI
+# =============================================================================
+df = dataset.copy()
+
+# Conversión segura y limpieza
+df["VALOR_ACTUAL"] = pd.to_numeric(df["VALOR_ACTUAL"], errors='coerce')
+df["COSTOFACIAL"] = pd.to_numeric(df["COSTOFACIAL"], errors='coerce')
+df.dropna(subset=["VALOR_ACTUAL", "COSTOFACIAL"], inplace=True)
+
+# Filtrar valores pequeños
+threshold = 5000.0
+df = df[(df["VALOR_ACTUAL"] > threshold) & (df["COSTOFACIAL"] > threshold)]
+
+# Completar operadores nulos
+df["ALIAS_operador"] = df["ALIAS_operador"].fillna("Desconocido")
+
+# Calcular % de ganancia/pérdida
+df["calc_ganancias_perdidas"] = (df["VALOR_ACTUAL"] / df["COSTOFACIAL"]) - 1
+
+# Normalización centrada en 0
+vmin = df["calc_ganancias_perdidas"].min()
+vmax = df["calc_ganancias_perdidas"].max()
+norm = TwoSlopeNorm(vmin=vmin, vcenter=0, vmax=vmax)
+
+# Asignación de colores con transparencia
+def apply_color(value):
+    rgba = plt.cm.RdYlGn(norm(value))
+    alpha_dinamico = max(0.3, 1 - abs(value) * 2)
+    alpha_final = min(1.0, alpha_dinamico * transparencia_base)
+    return (rgba[0], rgba[1], rgba[2], alpha_final)
+
+df["color"] = df["calc_ganancias_perdidas"].apply(apply_color)
+
+# =============================================================================
+# Crear gráfico Treemap con separación y etiquetas centradas
+# =============================================================================
+plt.figure(figsize=(16, 10))
+plt.subplots_adjust(left=0, right=1, top=1, bottom=0)
+
+# Calcular los rectángulos
+rects = squarify.normalize_sizes(df["VALOR_ACTUAL"], 100, 100)
+rects = squarify.squarify(rects, 0, 0, 100, 100)
+
+# Dibujar los recuadros con separación
+for i, (rect, row) in enumerate(zip(rects, df.itertuples())):
+    # Aplicar separación reduciendo tamaño y desplazando posición
+    x = rect['x'] + separacion / 2
+    y = rect['y'] + separacion / 2
+    dx = rect['dx'] - separacion
+    dy = rect['dy'] - separacion
+
+    if dx < 0 or dy < 0:
+        continue  # Saltar recuadros muy pequeños
+
+    # Dibujar el bloque
+    plt.gca().add_patch(plt.Rectangle(
+        (x, y), dx, dy,
+        facecolor=row.color,
+        edgecolor='white'
+    ))
+
+    # Etiquetas centradas
+    operador = row.ALIAS_operador
+    porcentaje = f"{row.calc_ganancias_perdidas:.2%}"
+    center_x = x + dx / 2
+    center_y = y + dy / 2
+
+    if dx > 0 and dy > 0:
+        # Texto operador (línea superior centrada)
+        plt.text(
+            center_x, center_y + 2,
+            operador,
+            fontsize=fontsize_operador,
+            fontweight='bold',
+            color='black',
+            ha='center',
+            va='center',
+            bbox=dict(facecolor='white', alpha=0.7, boxstyle='round,pad=0.2')
+        )
+
+        # Texto porcentaje (línea inferior centrada)
+        plt.text(
+            center_x, center_y - 2,
+            porcentaje,
+            fontsize=fontsize_porcentaje,
+            fontweight='bold',
+            color='black',
+            ha='center',
+            va='center'
+        )
+
+# Título
+plt.title(
+    "% Ganancia / Pérdida por OPERADOR",
+    fontsize=24,
+    fontweight='bold',
+    color='white',
+    backgroundcolor='#46647C',
+    pad=20
+)
+
+plt.axis("off")
+plt.xlim(0, 100)
+plt.ylim(0, 100)
+plt.show()
